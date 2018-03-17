@@ -45,6 +45,7 @@ public:
 	std::string name;
 	int money;
 	int bet = 0;
+	int score;
 	std::vector<Card> hand;
 
 	sf::TcpSocket sock;
@@ -105,6 +106,29 @@ void thread_function() {
 			case GiveInitialCards_:
 				break;
 			case StartPlayerTurn_:
+			{
+				bool canDouble = false;
+				if ((me.score >= 9 && me.score <= 11) && me.hand.size() == 2) canDouble = true;
+				std::cout << "Introduce 1)Pedir carta   2)Plantarse" << (canDouble ? "   3)Doblar apuesta: " : ": ");
+				std::cin >> intRec;
+
+				switch (intRec) {
+				case 1:
+					packetOut << Commands::AskForCard_;
+					break;
+				case 2:
+					packetOut << Commands::NomoreCards_;
+					break;
+				case 3:
+					if (canDouble) {
+						packetOut << Commands::DoubleBet_;
+					}
+					break;
+				default:
+					break;
+				}
+				me.sock.send(packetOut);
+			}
 				break;
 			case EndRound_:
 				break;

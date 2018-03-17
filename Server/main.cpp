@@ -39,7 +39,7 @@ public:
 	std::string name;
 	int money;
 	int bet = 0;
-	std::vector<int> score;
+	int score;
 	std::vector<Card> hand;
 
 	sf::TcpSocket* sock;
@@ -60,7 +60,7 @@ std::string Player::showCards() {
 	for each (Card card in hand) {
 		std::string num;
 		switch (card.number) {
-			case 0:
+			case 1:
 				num = "A";
 				break;
 			case 11:
@@ -97,35 +97,38 @@ std::string Player::showCards() {
 	return text;
 }
 void Player::calculateScore() {
-	std::vector<int> s;
-	s.push_back(0);
+	int s = 0;
+	bool firstAs = true;
 	for each (Card card in hand) {
-		std::string num;
 		switch (card.number) {
 			case 1:
-				s[0] += card.number;
-				for (int i = 0; i < s.size(); i++) s[i] += card.number;
-				s.push_back(s[0] + 10);
+				if (firstAs) {
+					firstAs = false;
+				} else {
+					s += card.number;
+				}
 				break;
 			case 11:
 			case 12:
 			case 13:
-				for (int i = 0; i < s.size(); i++) s[i] += 10;
+				s += 10;
 				break;
 			default:
-				for(int i = 0; i < s.size(); i++) s[i] += card.number;
+				s += card.number;
 				break;
+		}
+	}
+	if (!firstAs) {
+		if (s + 11 <= 21) {
+			s += 11;
+		} else {
+			s += 1;
 		}
 	}
 	score = s;
 }
-
 std::string Player::showScore() {
-	std::string text;
-	for (int i = 0; i < score.size(); i++) {
-		text += "Score(" + std::to_string(i) + "): " + std::to_string(score[i]) + "\n";
-	}
-	return text;
+	return "Score: " + std::to_string(score);
 }
 
 enum Commands {
@@ -135,6 +138,8 @@ enum Commands {
 std::vector<Card> deck;
 Player crupier;
 std::vector<Player> players;
+std::vector<std::vector<Player>::iterator> toRemove;
+std::vector<Player>::iterator playerTurn;
 int initMoney;
 
 sf::Packet packetIn;
@@ -259,7 +264,6 @@ int main() {
 								case PlaceBet_:
 								{
 									packetIn >> it->bet;
-									std::cout << it->bet << " : " << it->money << std::endl;
 									if (it->bet > it->money) {
 										packetOut << Commands::IncorrectBet_;
 										it->sock->send(packetOut);
@@ -277,36 +281,63 @@ int main() {
 										for (int i = 0; i < players.size(); i++) {
 											players[i].hand.push_back(giveRandomCard());
 											players[i].hand.push_back(giveRandomCard());
-											sendToAll(players[i].showCards());
+											players[i].calculateScore();
+											sendToAll(players[i].showCards() + " con puntuacion: " + players[i].showScore());
 										}
 										crupier.hand.push_back(giveRandomCard());
-										sendToAll(crupier.showCards());
+										crupier.calculateScore();
+										sendToAll(crupier.showCards() + " con puntuacion: " + crupier.showScore());
 										packetOut << Commands::StartPlayerTurn_;
-										players.front().sock->send(packetOut);
-										sendToAll("Turno del jugador: " + players.front().name + "\n" + players.front().showCards() + " con puntuacion: " + players.front().showScore());
+										playerTurn = players.begin();
+										playerTurn->sock->send(packetOut);
+										sendToAll("Turno del jugador: " + playerTurn->name + "\n" + playerTurn->showCards() + " con puntuacion: " + playerTurn->showScore());
 									}
 								}
 									break;
 								case AskForCard_:
+									playerTurn->hand.push_back(giveRandomCard());
+									playerTurn->calculateScore();
+									sendToAll(playerTurn->showCards() + " con puntuacion: " + playerTurn->showScore());
+									if (playerTurn->score >= 21) {
+										playerTurn++;
+										sendToAll("Turno del jugador: " + playerTurn->name + "\n" + playerTurn->showCards() + " con puntuacion: " + playerTurn->showScore());
+									}
+									packetOut << Commands::StartPlayerTurn_;
+									playerTurn->sock->send(packetOut);
 									break;
 								case NomoreCards_:
+									if (playerTurn != players.end()) {
+										playerTurn++;
+										sendToAll("Turno del jugador: " + playerTurn->name + "\n" + playerTurn->showCards() + " con puntuacion: " + playerTurn->showScore());
+										packetOut << Commands::StartPlayerTurn_;
+										playerTurn->sock->send(packetOut);
+									}
 									break;
 								case DoubleBet_:
+									it->bet *= 2;
+									packetOut << Commands::StartPlayerTurn_;
+									playerTurn->sock->send(packetOut);
 									break;
 								default:
 									break;
 							}
 							packetOut.clear();
 						} else if (status == sf::Socket::Disconnected) {
+							sendToAll(it->name + " se ha desconectado");
 							selector.remove(*it->sock);
-							//delete &player;
-							//clients.remove(client);
+							toRemove.push_back(it);
 							std::cout << "Elimino el socket que se ha desconectado\n";
 						} else {
 							std::cout << "Error al recibir de " << it->sock->getRemotePort() << std::endl;
 						}
 						packetIn.clear();
 					}
+				}
+				if (!toRemove.empty()) {
+					for (int i = 0; i < toRemove.size(); i++) {
+						players.erase(toRemove[i]);
+					}
+					toRemove.clear();
 				}
 			}
 		}
