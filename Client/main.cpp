@@ -61,7 +61,7 @@ Player::~Player() {
 Player me;
 
 enum Commands {
-	JoinTable_, ExitTable_, DecideEntryMoney_, EntryMoney_, PlaceBetOrder_, PlaceBet_, GiveInitialCards_, IncorrectBet_, StartPlayerTurn_, AskForCard_, NomoreCards_, DoubleBet_, EndRound_, ChatMSG_
+	JoinTable_, ExitTable_, DecideEntryMoney_, EntryMoney_, PlaceBetOrder_, PlaceBet_, GiveInitialCards_, IncorrectBet_, StartPlayerTurn_, AskForCard_, NomoreCards_, DoubleBet_, ChatMSG_
 };
 
 void receiveText(std::string text) {
@@ -107,8 +107,8 @@ void thread_function() {
 				break;
 			case StartPlayerTurn_:
 			{
-				bool canDouble = false;
-				if ((me.score >= 9 && me.score <= 11) && me.hand.size() == 2) canDouble = true;
+				bool canDouble;
+				packetIn >> canDouble;
 				std::cout << "Introduce 1)Pedir carta   2)Plantarse" << (canDouble ? "   3)Doblar apuesta: " : ": ");
 				std::cin >> intRec;
 
@@ -129,8 +129,6 @@ void thread_function() {
 				}
 				me.sock.send(packetOut);
 			}
-				break;
-			case EndRound_:
 				break;
 			case ChatMSG_:
 				packetIn >> strRec;

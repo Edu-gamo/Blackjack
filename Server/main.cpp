@@ -41,12 +41,15 @@ public:
 	int bet = 0;
 	int score;
 	std::vector<Card> hand;
+	bool blackjack = false;
+	bool lose = false;
 
 	sf::TcpSocket* sock;
 
 	std::string showCards();
 	void calculateScore();
 	std::string showScore();
+	void reset();
 
 };
 Player::Player() {
@@ -131,8 +134,16 @@ std::string Player::showScore() {
 	return "Score: " + std::to_string(score);
 }
 
+void Player::reset() {
+	bet = 0;
+	score = 0;
+	hand.clear();
+	blackjack = false;
+	lose = false;
+}
+
 enum Commands {
-	JoinTable_, ExitTable_, DecideEntryMoney_, EntryMoney_, PlaceBetOrder_, PlaceBet_, GiveInitialCards_, IncorrectBet_, StartPlayerTurn_, AskForCard_, NomoreCards_, DoubleBet_, EndRound_, ChatMSG_
+	JoinTable_, ExitTable_, DecideEntryMoney_, EntryMoney_, PlaceBetOrder_, PlaceBet_, GiveInitialCards_, IncorrectBet_, StartPlayerTurn_, AskForCard_, NomoreCards_, DoubleBet_, ChatMSG_
 };
 
 std::vector<Card> deck;
@@ -175,6 +186,76 @@ Card giveRandomCard() {
 	Card card = deck.at(pos);
 	deck.erase(deck.begin() + pos);
 	return card;
+}
+
+void checkWinner() {
+	for (std::vector<Player>::iterator it = players.begin(); it != players.end(); it++) {
+		int win = 0;
+		if (it->lose) {
+			it->money -= it->bet;
+			win = -1;
+		} else if (it->blackjack) {
+			if (!crupier.blackjack) {
+				it->money += it->bet * 2;
+				win = 1;
+			}
+		} else {
+			if (crupier.lose) {
+				it->money += it->bet;
+				win = 1;
+			} else {
+				if (it->score > crupier.score) {
+					it->money += it->bet;
+					win = 1;
+				} else if (it->score < crupier.score) {
+					it->money -= it->bet;
+					win = -1;
+				}
+			}
+		}
+		switch (win) {
+		case 0:
+			sendToAll(it->name + " ha empatado");
+			break;
+		case 1:
+			sendToAll(it->name + " ha ganado " + std::to_string(it->bet));
+			break;
+		case -1:
+			sendToAll(it->name + " ha perdido " + std::to_string(it->bet));
+			break;
+		default:
+			break;
+		}
+		it->reset();
+		if (it->money == 0) {
+			sendToAll(it->name + " se ha quedado sin fichas");
+			toRemove.push_back(it);
+		} else {
+			sendToAll(it->name + " tiene " + std::to_string(it->money) + " fichas");
+		}
+	}
+	crupier.reset();
+}
+
+void crupierTurn() {
+	sendToAll("Turno del crupier");
+	sendToAll(crupier.showCards() + " con " + crupier.showScore());
+	while (crupier.score < 17) {
+		crupier.hand.push_back(giveRandomCard());
+		crupier.calculateScore();
+		sendToAll(crupier.showCards() + " con " + crupier.showScore());
+		if (crupier.score == 21 && crupier.hand.size() == 2) {
+			crupier.blackjack = true;
+			sendToAll("BLACKJACK de " + crupier.name);
+		}
+	}
+	if (crupier.score > 21) crupier.lose = true;
+	checkWinner();
+	createDeck();
+	packetOut << Commands::PlaceBetOrder_;
+	for (int i = 0; i < players.size(); i++) {
+		players[i].sock->send(packetOut);
+	}
 }
 
 int main() {
@@ -243,11 +324,12 @@ int main() {
 
 									//Al llegar a 4 jugadores empieza la partida
 									if (players.size() >= 2) {
+										packetOut << Commands::PlaceBetOrder_;
 										for (int i = 0; i < players.size(); i++) {
 											players[i].money = initMoney;
-											packetOut << Commands::PlaceBetOrder_;
 											players[i].sock->send(packetOut);
 										}
+										sendToAll("Fichas iniciales: " + std::to_string(initMoney));
 									}
 									break;
 								case ChatMSG_:
@@ -282,41 +364,90 @@ int main() {
 											players[i].hand.push_back(giveRandomCard());
 											players[i].hand.push_back(giveRandomCard());
 											players[i].calculateScore();
-											sendToAll(players[i].showCards() + " con puntuacion: " + players[i].showScore());
+											sendToAll(players[i].showCards() + " con " + players[i].showScore());
 										}
 										crupier.hand.push_back(giveRandomCard());
 										crupier.calculateScore();
-										sendToAll(crupier.showCards() + " con puntuacion: " + crupier.showScore());
-										packetOut << Commands::StartPlayerTurn_;
+										sendToAll(crupier.showCards() + " con " + crupier.showScore());
+
 										playerTurn = players.begin();
-										playerTurn->sock->send(packetOut);
-										sendToAll("Turno del jugador: " + playerTurn->name + "\n" + playerTurn->showCards() + " con puntuacion: " + playerTurn->showScore());
+										bool lastPlayer = false;
+										while (playerTurn->score == 21 && !lastPlayer) {
+											if (playerTurn == players.end() - 1) lastPlayer = true;
+											sendToAll("BLACKJACK de " + playerTurn->name);
+											playerTurn->blackjack = true;
+											if(!lastPlayer) playerTurn++;
+										}
+										if (playerTurn->score != 21) {
+											bool canDouble = false;
+											if ((playerTurn->score >= 9 && playerTurn->score <= 11) && playerTurn->hand.size() == 2) canDouble = true;
+											packetOut << Commands::StartPlayerTurn_ << canDouble;
+											playerTurn->sock->send(packetOut);
+											sendToAll("");
+											sendToAll("Turno del jugador: " + playerTurn->name);
+											sendToAll(playerTurn->showCards() + " con " + playerTurn->showScore());
+										} else {
+											crupierTurn();
+										}
 									}
 								}
 									break;
 								case AskForCard_:
+								{
 									playerTurn->hand.push_back(giveRandomCard());
 									playerTurn->calculateScore();
-									sendToAll(playerTurn->showCards() + " con puntuacion: " + playerTurn->showScore());
+									sendToAll(playerTurn->showCards() + " con " + playerTurn->showScore());
+									bool canDouble = false;
 									if (playerTurn->score >= 21) {
-										playerTurn++;
-										sendToAll("Turno del jugador: " + playerTurn->name + "\n" + playerTurn->showCards() + " con puntuacion: " + playerTurn->showScore());
+										playerTurn->lose = true;
+										if (playerTurn != players.end() - 1) {
+											playerTurn++;
+											sendToAll("");
+											sendToAll("Turno del jugador: " + playerTurn->name);
+											sendToAll(playerTurn->showCards() + " con " + playerTurn->showScore());
+											if ((playerTurn->score >= 9 && playerTurn->score <= 11) && playerTurn->hand.size() == 2) canDouble = true;
+											packetOut << Commands::StartPlayerTurn_ << canDouble;
+											playerTurn->sock->send(packetOut);
+										} else {
+											crupierTurn();
+										}
+									} else {
+										packetOut << Commands::StartPlayerTurn_ << canDouble;
+										playerTurn->sock->send(packetOut);
 									}
-									packetOut << Commands::StartPlayerTurn_;
-									playerTurn->sock->send(packetOut);
+								}
 									break;
 								case NomoreCards_:
-									if (playerTurn != players.end()) {
+									if (playerTurn != players.end() - 1) {
 										playerTurn++;
-										sendToAll("Turno del jugador: " + playerTurn->name + "\n" + playerTurn->showCards() + " con puntuacion: " + playerTurn->showScore());
-										packetOut << Commands::StartPlayerTurn_;
+										sendToAll("");
+										sendToAll("Turno del jugador: " + playerTurn->name);
+										sendToAll(playerTurn->showCards() + " con " + playerTurn->showScore());
+										bool canDouble = false;
+										if ((playerTurn->score >= 9 && playerTurn->score <= 11) && playerTurn->hand.size() == 2) canDouble = true;
+										packetOut << Commands::StartPlayerTurn_ << canDouble;
 										playerTurn->sock->send(packetOut);
+									} else {
+										crupierTurn();
 									}
 									break;
 								case DoubleBet_:
 									it->bet *= 2;
-									packetOut << Commands::StartPlayerTurn_;
-									playerTurn->sock->send(packetOut);
+									it->hand.push_back(giveRandomCard());
+									it->calculateScore();
+									sendToAll(it->showCards() + " con " + it->showScore());
+									if (playerTurn != players.end() - 1) {
+										playerTurn++;
+										sendToAll("");
+										sendToAll("Turno del jugador: " + playerTurn->name);
+										sendToAll(playerTurn->showCards() + " con " + playerTurn->showScore());
+										bool canDouble = false;
+										if ((playerTurn->score >= 9 && playerTurn->score <= 11) && playerTurn->hand.size() == 2) canDouble = true;
+										packetOut << Commands::StartPlayerTurn_ << canDouble;
+										playerTurn->sock->send(packetOut);
+									} else {
+										crupierTurn();
+									}
 									break;
 								default:
 									break;
@@ -326,6 +457,16 @@ int main() {
 							sendToAll(it->name + " se ha desconectado");
 							selector.remove(*it->sock);
 							toRemove.push_back(it);
+							if (it == playerTurn && playerTurn != players.end() - 1) {
+								playerTurn++;
+								sendToAll("");
+								sendToAll("Turno del jugador: " + playerTurn->name);
+								sendToAll(playerTurn->showCards() + " con " + playerTurn->showScore());
+								packetOut << Commands::StartPlayerTurn_ << false;
+								playerTurn->sock->send(packetOut);
+							} else {
+								crupierTurn();
+							}
 							std::cout << "Elimino el socket que se ha desconectado\n";
 						} else {
 							std::cout << "Error al recibir de " << it->sock->getRemotePort() << std::endl;
@@ -338,6 +479,7 @@ int main() {
 						players.erase(toRemove[i]);
 					}
 					toRemove.clear();
+					if (players.empty()) crupier.hand.clear();
 				}
 			}
 		}
