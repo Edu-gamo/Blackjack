@@ -323,7 +323,7 @@ int main() {
 									sendToAll(it->name + " se ha conectado");
 
 									//Al llegar a 4 jugadores empieza la partida
-									if (players.size() >= 4) {
+									if (players.size() >= 2) {
 										packetOut << Commands::PlaceBetOrder_;
 										for (int i = 0; i < players.size(); i++) {
 											players[i].money = initMoney;
