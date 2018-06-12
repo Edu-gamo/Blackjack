@@ -68,7 +68,7 @@ void main() {
 				packetOut << Commands::NoEmpty << i;
 
 				for (int i = 0; i < players.size(); i++) {
-					packetOut << players[i].name << players[i].ip << players[i].port;
+					packetOut << players[i].name << i << players[i].ip << players[i].port;
 				}
 
 			}

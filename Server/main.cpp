@@ -338,6 +338,19 @@ int main() {
 									break;
 								case ExitTable_:
 									sendToAll(it->name + " se ha desconectado");
+									selector.remove(*it->sock);
+									toRemove.push_back(it);
+									if (it == playerTurn && playerTurn != players.end() - 1) {
+										playerTurn++;
+										sendToAll("");
+										sendToAll("Turno del jugador: " + playerTurn->name);
+										sendToAll(playerTurn->showCards() + " con " + playerTurn->showScore());
+										packetOut << Commands::StartPlayerTurn_ << false;
+										playerTurn->sock->send(packetOut);
+									}
+									else {
+										crupierTurn();
+									}
 									break;
 								case EntryMoney_:
 									packetIn >> intRec;

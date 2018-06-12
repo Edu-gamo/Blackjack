@@ -1,9 +1,16 @@
+#include <SFML\Graphics.hpp>
 #include <SFML\Network.hpp>
 #include <iostream>
 #include <vector>
+#include <thread>
+#include <mutex>
 
 sf::IpAddress ip = sf::IpAddress::getLocalAddress();
 sf::Socket::Status status;
+
+std::mutex mut;
+
+std::vector<std::string> aMensajes;
 
 enum Commands {
 	Empty, NoEmpty, JoinTable_, ExitTable_, DecideEntryMoney_, EntryMoney_, PlaceBetOrder_, PlaceBet_, GiveInitialCards_, IncorrectBet_, StartPlayerTurn_, AskForCard_, NomoreCards_, DoubleBet_, ChatMSG_
@@ -33,12 +40,15 @@ public:
 	~Player();
 
 	std::string name;
-	int money;
+	int id;
+	int money = 100;
 	int bet = 0;
 	int score;
 	std::vector<Card> hand;
 	bool blackjack = false;
 	bool lose = false;
+	bool isCrupier = false;
+	int turn = 0;
 
 	sf::TcpSocket sock;
 	sf::IpAddress ip;
@@ -147,6 +157,118 @@ std::vector<Player*> players;
 
 sf::Packet packetOut, packetIn;
 
+void receiveText(std::string text) {
+	aMensajes.push_back(text);
+	if (aMensajes.size() > 25) {
+		aMensajes.erase(aMensajes.begin(), aMensajes.begin() + 1);
+	}
+}
+
+void thread_function(int playerIndex) {
+	mut.lock();
+	std::cout << me.name << ":" << me.id << " --> " << players[playerIndex]->name << ":" << players[playerIndex]->id << std::endl;
+	mut.unlock();
+	//sf::Packet packetIn2;
+	//std::string strRec;
+	//int intRec;
+	//int enumVar;
+	//Commands com;
+	//do {
+	//	status = players[playerIndex]->sock.receive(packetIn2);
+	//	packetIn2 >> enumVar;
+	//	com = (Commands)enumVar;
+	//	switch (com) {
+	//	/*case DecideEntryMoney_:
+	//		std::cout << "Introduce el dinero inicial de la mesa: ";
+	//		std::cin >> me.money;
+
+	//		packetOut << Commands::EntryMoney_ << me.money;
+	//		me.sock.send(packetOut);
+	//		break;*/
+	//	case PlaceBetOrder_:
+	//		do {
+	//			std::cout << "Introduce tu apuesta: ";
+	//			std::cin >> me.bet;
+	//		} while (me.bet > me.money || me.bet < 0);
+
+	//		packetOut << Commands::PlaceBet_ << me.bet;
+	//		me.sock.send(packetOut);
+	//		break;
+	//	/*case IncorrectBet_:
+	//		std::cout << "Error en tu apuesta, dinero insuficiente\nIntroduce tu apuesta: ";
+	//		std::cin >> me.bet;
+
+	//		packetOut << Commands::PlaceBet_ << me.bet;
+	//		me.sock.send(packetOut);
+	//		break;*/
+	//	case GiveInitialCards_:
+	//		break;
+	//	case StartPlayerTurn_:
+	//	{
+	//		bool canDouble;
+	//		packetIn >> canDouble;
+	//		std::cout << "Introduce 1)Pedir carta   2)Plantarse" << (canDouble ? "   3)Doblar apuesta: " : ": ");
+	//		std::cin >> intRec;
+
+	//		switch (intRec) {
+	//		case 1:
+	//			packetOut << Commands::AskForCard_;
+	//			break;
+	//		case 2:
+	//			packetOut << Commands::NomoreCards_;
+	//			break;
+	//		case 3:
+	//			if (canDouble) {
+	//				packetOut << Commands::DoubleBet_;
+	//			}
+	//			break;
+	//		default:
+	//			break;
+	//		}
+	//		me.sock.send(packetOut);
+	//	}
+	//	break;
+	//	case ChatMSG_:
+	//		packetIn2 >> strRec;
+	//		receiveText(strRec);
+	//		break;
+	//	default:
+	//		break;
+	//	}
+	//	packetIn2.clear();
+	//	packetOut.clear();
+	//} while (status == sf::Socket::Done);
+	//if (status == sf::Socket::Disconnected) receiveText("Se ha perdido la conexion con el servidor");
+}
+
+//Send a message to all clients
+void sendToAll(sf::Packet packet) {
+	for (Player* player : players) {
+		player->sock.send(packet);
+	}
+}
+
+std::vector<Card> deck;
+
+void createDeck() {
+	deck.clear();
+	for (int i = 0; i < 4; i++) {
+		for (int j = 1; j <= 13; j++) {
+			Card newCard;
+			newCard.suit = (Card::Suits)i;
+			newCard.number = j;
+			deck.push_back(newCard);
+		}
+	}
+}
+
+Card giveRandomCard() {
+	int pos = rand() % (deck.size() + 1);
+	Card card = deck.at(pos);
+	deck.erase(deck.begin() + pos);
+	return card;
+}
+
 void main() {
 
 	std::cout << "Nombre de usuario: ";
@@ -157,6 +279,8 @@ void main() {
 	if (status == sf::Socket::Done) {
 		std::cout << "Conectado al Servidor " << ip << "\n";
 		packetOut << me.name;
+		me.ip = sf::IpAddress::getLocalAddress();
+		me.port = me.sock.getLocalPort();
 		me.sock.send(packetOut);
 		packetOut.clear();
 	} else {
@@ -175,29 +299,32 @@ void main() {
 	switch (command) {
 		case Empty:
 			std::cout << "Primer jugador\n";
+			me.isCrupier = true;
+			me.id = 0;
 
 			break;
 		case NoEmpty: {
 			int size;
 			packetIn >> size;
+			me.id = size;
 
 			std::cout << "Total de jugadores anteriores " << size << "\n";
 
 			for (int i = 0; i < size; i++) {
 				Player* newPlayer = new Player;
 				packetIn >> newPlayer->name;
+				packetIn >> newPlayer->id;
 				std::string newIp;
 				packetIn >> newIp;
 				newPlayer->ip = sf::IpAddress(newIp);
 				packetIn >> newPlayer->port;
 
+				newPlayer->sock.connect(newPlayer->ip, newPlayer->port, sf::seconds(5.f));
+
 				players.push_back(newPlayer);
 
-				sf::TcpSocket* socket = new sf::TcpSocket;
-				socket->connect(newPlayer->ip, newPlayer->port, sf::seconds(5.f));
-
-				packetOut << me.name;
-				socket->send(packetOut);
+				packetOut << me.name << me.id << me.ip.toString() << me.port;
+				newPlayer->sock.send(packetOut);
 				packetOut.clear();
 
 				std::cout << "Jugador: " << newPlayer->name << "\n";
@@ -214,17 +341,18 @@ void main() {
 	while (players.size() < 3) {
 
 		sf::TcpListener listener;
-		sf::TcpSocket* sock = new sf::TcpSocket;
 
 		Player* newPlayer = new Player;
 
 		listener.listen(port);
-		listener.accept(*sock);
+		listener.accept(newPlayer->sock);
 
-		sock->receive(packetIn);
+		newPlayer->sock.receive(packetIn);
 		packetIn >> newPlayer->name;
+		packetIn >> newPlayer->id;
 		std::string newIp;
 		packetIn >> newIp;
+		std::cout << newIp << std::endl;
 		newPlayer->ip = sf::IpAddress(newIp);
 		packetIn >> newPlayer->port;
 		packetIn.clear();
@@ -233,5 +361,97 @@ void main() {
 		players.push_back(newPlayer);
 
 	}
+
+	sf::Vector2i screenDimensions(800, 600);
+
+	sf::RenderWindow window;
+	window.create(sf::VideoMode(screenDimensions.x, screenDimensions.y), ("Chat (" + me.name + ")"));
+
+	sf::Font font;
+	if (!font.loadFromFile("comicSans.ttf")) {
+		std::cout << "Can't load the font file" << std::endl;
+	}
+
+	sf::String mensaje = ">";
+
+	sf::Text chattingText(mensaje, font, 14);
+	chattingText.setFillColor(sf::Color(0, 160, 0));
+	chattingText.setStyle(sf::Text::Bold);
+
+
+	sf::Text text(mensaje, font, 14);
+	text.setFillColor(sf::Color(0, 160, 0));
+	text.setStyle(sf::Text::Bold);
+	text.setPosition(0, 560);
+
+	sf::RectangleShape separator(sf::Vector2f(800, 5));
+	separator.setFillColor(sf::Color(200, 200, 200, 255));
+	separator.setPosition(0, 550);
+
+	std::vector<std::thread> threads;
+	for (int val = 0; val < players.size(); val++) {
+		threads.push_back(std::thread(&thread_function, val));
+	}
+
+	while (window.isOpen()) {
+
+		sf::Event evento;
+		while (window.pollEvent(evento)) {
+			switch (evento.type) {
+			case sf::Event::Closed:
+				window.close();
+				break;
+			case sf::Event::KeyPressed:
+				if (evento.key.code == sf::Keyboard::Escape) window.close();
+				else if (evento.key.code == sf::Keyboard::Return) {
+
+					//SEND
+					mensaje.erase(0, 1);
+					if (mensaje == "exit") {
+						window.close();
+						continue;
+					}
+					mensaje = me.name + ": " + mensaje;
+
+					packetOut << Commands::ChatMSG_ << mensaje.toAnsiString().c_str();
+					sendToAll(packetOut);
+					packetOut.clear();
+					receiveText(mensaje.toAnsiString().c_str());
+
+					//SEND END
+
+					mensaje = ">";
+				}
+				break;
+			case sf::Event::TextEntered:
+				if (evento.text.unicode >= 32 && evento.text.unicode <= 126)
+					mensaje += (char)evento.text.unicode;
+				else if (evento.text.unicode == 8 && mensaje.getSize() > 1)
+					mensaje.erase(mensaje.getSize() - 1, mensaje.getSize());
+				break;
+			}
+		}
+		window.draw(separator);
+		for (size_t i = 0; i < aMensajes.size(); i++) {
+			std::string chatting = aMensajes[i];
+			chattingText.setPosition(sf::Vector2f(0, 20 * i));
+			chattingText.setString(chatting);
+			window.draw(chattingText);
+		}
+		std::string mensaje_ = mensaje + "_";
+		text.setString(mensaje_);
+
+		window.draw(text);
+
+
+		window.display();
+		window.clear();
+
+	}
+
+	for (int val = 0; val < threads.size(); val++) {
+		threads[val].join();
+	}
+	threads.clear();
 
 }
