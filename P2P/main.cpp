@@ -168,77 +168,77 @@ void thread_function(int playerIndex) {
 	mut.lock();
 	std::cout << me.name << ":" << me.id << " --> " << players[playerIndex]->name << ":" << players[playerIndex]->id << std::endl;
 	mut.unlock();
-	//sf::Packet packetIn2;
-	//std::string strRec;
-	//int intRec;
-	//int enumVar;
-	//Commands com;
-	//do {
-	//	status = players[playerIndex]->sock.receive(packetIn2);
-	//	packetIn2 >> enumVar;
-	//	com = (Commands)enumVar;
-	//	switch (com) {
-	//	/*case DecideEntryMoney_:
-	//		std::cout << "Introduce el dinero inicial de la mesa: ";
-	//		std::cin >> me.money;
+	sf::Packet packetIn2;
+	std::string strRec;
+	int intRec;
+	int enumVar;
+	Commands com;
+	do {
+		status = players[playerIndex]->sock.receive(packetIn2);
+		packetIn2 >> enumVar;
+		com = (Commands)enumVar;
+		switch (com) {
+		/*case DecideEntryMoney_:
+			std::cout << "Introduce el dinero inicial de la mesa: ";
+			std::cin >> me.money;
 
-	//		packetOut << Commands::EntryMoney_ << me.money;
-	//		me.sock.send(packetOut);
-	//		break;*/
-	//	case PlaceBetOrder_:
-	//		do {
-	//			std::cout << "Introduce tu apuesta: ";
-	//			std::cin >> me.bet;
-	//		} while (me.bet > me.money || me.bet < 0);
+			packetOut << Commands::EntryMoney_ << me.money;
+			me.sock.send(packetOut);
+			break;*/
+		case PlaceBetOrder_:
+			do {
+				std::cout << "Introduce tu apuesta: ";
+				std::cin >> me.bet;
+			} while (me.bet > me.money || me.bet < 0);
 
-	//		packetOut << Commands::PlaceBet_ << me.bet;
-	//		me.sock.send(packetOut);
-	//		break;
-	//	/*case IncorrectBet_:
-	//		std::cout << "Error en tu apuesta, dinero insuficiente\nIntroduce tu apuesta: ";
-	//		std::cin >> me.bet;
+			packetOut << Commands::PlaceBet_ << me.bet;
+			me.sock.send(packetOut);
+			break;
+		/*case IncorrectBet_:
+			std::cout << "Error en tu apuesta, dinero insuficiente\nIntroduce tu apuesta: ";
+			std::cin >> me.bet;
 
-	//		packetOut << Commands::PlaceBet_ << me.bet;
-	//		me.sock.send(packetOut);
-	//		break;*/
-	//	case GiveInitialCards_:
-	//		break;
-	//	case StartPlayerTurn_:
-	//	{
-	//		bool canDouble;
-	//		packetIn >> canDouble;
-	//		std::cout << "Introduce 1)Pedir carta   2)Plantarse" << (canDouble ? "   3)Doblar apuesta: " : ": ");
-	//		std::cin >> intRec;
+			packetOut << Commands::PlaceBet_ << me.bet;
+			me.sock.send(packetOut);
+			break;*/
+		case GiveInitialCards_:
+			break;
+		case StartPlayerTurn_:
+		{
+			bool canDouble;
+			packetIn >> canDouble;
+			std::cout << "Introduce 1)Pedir carta   2)Plantarse" << (canDouble ? "   3)Doblar apuesta: " : ": ");
+			std::cin >> intRec;
 
-	//		switch (intRec) {
-	//		case 1:
-	//			packetOut << Commands::AskForCard_;
-	//			break;
-	//		case 2:
-	//			packetOut << Commands::NomoreCards_;
-	//			break;
-	//		case 3:
-	//			if (canDouble) {
-	//				packetOut << Commands::DoubleBet_;
-	//			}
-	//			break;
-	//		default:
-	//			break;
-	//		}
-	//		me.sock.send(packetOut);
-	//	}
-	//	break;
-	//	case ChatMSG_:
-	//		packetIn2 >> strRec;
-	//		receiveText(strRec);
-	//		break;
-	//	default:
-	//		break;
-	//	}
-	//	packetIn2.clear();
-	//	packetOut.clear();
-	//} while (status == sf::Socket::Done);
-	//if (status == sf::Socket::Disconnected) receiveText("Se ha perdido la conexion con el servidor");
+			switch (intRec) {
+			case 1:
+				packetOut << Commands::AskForCard_;
+				break;
+			case 2:
+				packetOut << Commands::NomoreCards_;
+				break;
+			case 3:
+				if (canDouble) {
+					packetOut << Commands::DoubleBet_;
+				}
+				break;
+			default:
+				break;
+			}
+			me.sock.send(packetOut);
+		}
+		break;
+		case ChatMSG_:
+			packetIn2 >> strRec;
+			receiveText(strRec);
+			break;
+		default:
+			break;
+		}
+		packetIn2.clear();
+		packetOut.clear();
+	} while (status == sf::Socket::Done);
+	if (status == sf::Socket::Disconnected) receiveText("Se ha perdido la conexion con el servidor");
 }
 
 //Send a message to all clients
